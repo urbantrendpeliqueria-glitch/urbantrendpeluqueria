@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Urban Trend · Prueba de pagos</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#111;color:#eee;font:16px/1.6 system-ui,sans-serif}main{max-width:780px;margin:auto;padding:40px 22px}h1{font-size:34px;line-height:1.15}h2{font-size:20px}.brand{color:#f8d535;letter-spacing:.12em;font-weight:800}.badge{display:inline-block;padding:5px 12px;border:1px solid #f8d535;border-radius:20px;color:#f8d535;font-size:13px}.box{background:#1c1c1c;border:1px solid #393939;padding:24px;border-radius:14px;margin:22px 0}label{display:block;margin:12px 0}input{display:block;width:100%;padding:12px;font:inherit;background:#111;border:1px solid #777;border-radius:8px;color:#fff}button{font:inherit;font-weight:700;cursor:pointer;padding:12px 18px;border-radius:8px;border:0;background:#f8d535;color:#111;margin:8px 8px 8px 0}button.secondary{background:#333;color:#fff}button:disabled{opacity:.45;cursor:wait}.muted{color:#bbb;font-size:14px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.stats div{padding:14px;background:#111;border-radius:8px}.stats strong{display:block;font-size:24px;overflow-wrap:anywhere}.stats span{font-size:13px;color:#bbb}a{color:#f8d535}[hidden]{display:none!important}#message{min-height:28px;white-space:pre-wrap}@media(max-width:550px){.stats{grid-template-columns:1fr}h1{font-size:29px}}
+</style></head><body><main>
+<p class="brand">URBAN TREND</p><span class="badge">ENSAYO · CUENTAS DE PRUEBA</span>
+<h1>Prueba del nuevo módulo de pagos</h1>
+<p>Este ensayo permite verificar Mercado Pago y el registro de una compra. Usa un artículo de prueba de <strong>$1.000 ARS</strong>, sin entrega ni modificación del inventario del local.</p>
+<p class="muted">Ingresá como administrador de Urban Trend. En Mercado Pago usá únicamente el comprador y los medios de pago de prueba del ambiente.</p>
+<section id="login" class="box"><h2>Acceso del administrador</h2><form id="loginForm">
+<label>Correo<input type="email" id="email" autocomplete="username" required></label>
+<label>Contraseña<input type="password" id="password" autocomplete="current-password" required></label>
+<button id="loginButton">Ingresar</button></form></section>
+<section id="panel" class="box" hidden><h2>Compra de prueba</h2><p>Artículo: Urban Trend — PRUEBA SIN ENTREGA<br>Precio fijado por el servidor: $1.000 ARS · Cantidad: 1</p>
+<button id="start">Preparar pago de prueba</button><button id="pay" hidden>Abrir Mercado Pago de prueba</button>
+<button id="refresh" class="secondary" hidden>Consultar estado</button><button id="reconcile" class="secondary" hidden>Recuperar confirmación</button>
+<p id="reference" class="muted"></p><div class="stats"><div><span>Estado</span><strong id="state">Sin iniciar</strong></div><div><span>Confirmaciones aplicadas</span><strong id="count">0</strong></div><div><span>Stock simulado</span><strong id="stock">2</strong></div></div>
+<p class="muted">Tras una aprobación esperamos una sola confirmación y stock simulado 1. Consultar o recuperar varias veces no debe descontarlo de nuevo. Un reembolso cambia el estado; no repone automáticamente artículos.</p>
+<button id="newTest" class="secondary">Iniciar otro ensayo</button><button id="logout" class="secondary">Cerrar sesión</button></section>
+<p id="message" role="status" aria-live="polite">Comprobando acceso…</p><p><a href="/">Volver a Urban Trend</a></p>
+</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-config.js"></script>
+<script>
+const cfg=window.URBAN_TREND_SUPABASE,client=window.supabase.createClient(cfg.url,cfg.anonKey),base=cfg.url+'/functions/v1/urbantrend-mp-pilot';
+const $=id=>document.getElementById(id),key='ut_mp_pilot_v1';
+let session=null,intent=null,requestId=null;
+try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved){intent=saved.intent;requestId=saved.requestId}}catch{}
+function persist(){sessionStorage.setItem(key,JSON.stringify({intent,requestId}));}
+function message(text){$('message').textContent=text;}
+function errorMessage(e){return ({ADMIN_REQUIRED:'Ingresá con la cuenta administradora de Urban Trend.',PILOT_CONFIGURATION_REQUIRED:'El servidor de prueba todavía requiere configuración.',PILOT_DISABLED:'La creación de pagos de prueba está desactivada.',CHECKOUT_BUSY:'Se está preparando el pago. Esperá 30 segundos antes de reintentar.',INTENT_EXPIRED:'Este ensayo venció. Consultá su estado antes de iniciar otro.',INTENT_NOT_PAYABLE:'Este cobro no admite otro pago. Consultá su estado.',PILOT_UNAVAILABLE:'No se pudo completar la consulta. Reintentá; no vuelvas a pagar sin verificar.'})[e.message]||'No se pudo completar la operación. Verificá el estado antes de volver a pagar.';}
+async function call(action,data,admin=true){
+  const headers={'Content-Type':'application/json'};
+  if(admin){const result=await client.auth.getSession();session=result.data.session;if(!session)throw new Error('ADMIN_REQUIRED');headers.Authorization='Bearer '+session.access_token;headers.apikey=cfg.anonKey;}
+  const r=await fetch(base+(admin?'/admin/':'/')+action,{method:'POST',headers,body:JSON.stringify(data),signal:AbortSignal.timeout(120000)});
+  const result=await r.json();if(!r.ok)throw new Error(result.error||'PILOT_UNAVAILABLE');return result;
+}
+async function showAccess(){
+  const result=await client.auth.getSession();session=result.data.session;
+  let admin=false;if(session){const check=await client.rpc('is_urban_admin');admin=!check.error&&check.data===true;}
+  $('login').hidden=admin;$('panel').hidden=!admin;
+  if(!admin){message('Ingresá para realizar la prueba.');return;}
+  message('Acceso confirmado. Podés preparar el ensayo.');
+  if(intent){$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();}
+}
+async function refresh(){if(!intent)return;const data=await call('status',{id:intent.id});
+  $('reference').textContent='Prueba: '+intent.id;
+  const names={pending:'Pendiente',paid:'Pagado',rejected:'Rechazado',needs_review:'Revisar',refunded:'Reembolsado',partially_refunded:'Reembolso parcial',charged_back:'Contracargo'};
+  $('state').textContent=names[data.status]||data.status;$('count').textContent=data.confirmationCount;$('stock').textContent=data.simulatedStock;
+  $('pay').hidden=!['pending','rejected'].includes(data.status);
+  message(data.status==='paid'?'Pago confirmado por el servidor. Verificá que haya una sola aplicación.':'Estado consultado en el servidor: '+(names[data.status]||data.status));
+}
+async function run(button,fn){button.disabled=true;try{await fn();}catch(e){message(errorMessage(e));}finally{button.disabled=false;}}
+$('loginForm').addEventListener('submit',e=>{e.preventDefault();run($('loginButton'),async()=>{
+  const r=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('password').value='';
+  if(r.error){message('No se pudo iniciar sesión. Revisá el correo y la contraseña.');return;}await showAccess();
+});});
+$('start').onclick=()=>run($('start'),async()=>{requestId||=crypto.randomUUID();persist();intent=await call('create',{requestId});
+  if(intent.liveMode!==false)throw new Error('PILOT_UNAVAILABLE');persist();$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();});
+$('pay').onclick=()=>run($('pay'),async()=>{if(!intent)return;const data=await call('checkout',{id:intent.id,token:intent.token},false);const u=new URL(data.checkoutUrl);
+  if(u.protocol!=='https:'||!['www.mercadopago.com.ar','sandbox.mercadopago.com.ar'].includes(u.hostname))throw new Error('PILOT_UNAVAILABLE');location.assign(u.href);});
+$('refresh').onclick=()=>run($('refresh'),refresh);
+$('reconcile').onclick=()=>run($('reconcile'),async()=>{let offset=0;do{const result=await call('reconcile',{id:intent.id,offset});offset=result.nextOffset;}while(offset!==null);await refresh();});
+$('newTest').onclick=()=>{intent=null;requestId=null;sessionStorage.removeItem(key);$('pay').hidden=true;$('refresh').hidden=true;$('reconcile').hidden=true;$('reference').textContent='';$('state').textContent='Sin iniciar';$('count').textContent='0';$('stock').textContent='2';message('Ensayo nuevo preparado. Los anteriores se conservan en el servidor.');};
+$('logout').onclick=()=>run($('logout'),async()=>{await client.auth.signOut();intent=null;requestId=null;sessionStorage.removeItem(key);await showAccess();});
+showAccess().catch(()=>message('No pudimos comprobar el acceso. El servidor puede estar restaurándose o pendiente de configuración.'));
+</script></body></html>
