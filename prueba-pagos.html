@@ -56,7 +56,7 @@ $('loginForm').addEventListener('submit',e=>{e.preventDefault();run($('loginButt
   if(r.error){message('No se pudo iniciar sesión. Revisá el correo y la contraseña.');return;}await showAccess();
 });});
 $('start').onclick=()=>run($('start'),async()=>{requestId||=crypto.randomUUID();persist();intent=await call('create',{requestId});
-  if(intent.liveMode!==false)throw new Error('PILOT_UNAVAILABLE');persist();$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();});
+  if(intent.testMode!==true)throw new Error('PILOT_UNAVAILABLE');persist();$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();});
 $('pay').onclick=()=>run($('pay'),async()=>{if(!intent)return;const data=await call('checkout',{id:intent.id,token:intent.token},false);const u=new URL(data.checkoutUrl);
   if(u.protocol!=='https:'||!['www.mercadopago.com.ar','sandbox.mercadopago.com.ar'].includes(u.hostname))throw new Error('PILOT_UNAVAILABLE');location.assign(u.href);});
 $('refresh').onclick=()=>run($('refresh'),refresh);
