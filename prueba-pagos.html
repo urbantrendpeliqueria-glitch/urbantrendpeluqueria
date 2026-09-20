@@ -26,6 +26,9 @@ const cfg=window.URBAN_TREND_SUPABASE,client=window.supabase.createClient(cfg.ur
 const $=id=>document.getElementById(id),key='ut_mp_pilot_v1';
 let session=null,intent=null,requestId=null;
 try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved){intent=saved.intent;requestId=saved.requestId}}catch{}
+// The URL identifies the record only; its state and access come from the server.
+const returnId=new URL(location.href).searchParams.get('intent');
+if(returnId&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(returnId)&&intent?.id!==returnId){intent={id:returnId};requestId=null;}
 function persist(){sessionStorage.setItem(key,JSON.stringify({intent,requestId}));}
 function message(text){$('message').textContent=text;}
 function errorMessage(e){return ({ADMIN_REQUIRED:'Ingresá con la cuenta administradora de Urban Trend.',PILOT_CONFIGURATION_REQUIRED:'El servidor de prueba todavía requiere configuración.',PILOT_DISABLED:'La creación de pagos de prueba está desactivada.',CHECKOUT_BUSY:'Se está preparando el pago. Esperá 30 segundos antes de reintentar.',INTENT_EXPIRED:'Este ensayo venció. Consultá su estado antes de iniciar otro.',INTENT_NOT_PAYABLE:'Este cobro no admite otro pago. Consultá su estado.',PILOT_UNAVAILABLE:'No se pudo completar la consulta. Reintentá; no vuelvas a pagar sin verificar.'})[e.message]||'No se pudo completar la operación. Verificá el estado antes de volver a pagar.';}
@@ -44,6 +47,8 @@ async function showAccess(){
   if(intent){$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();}
 }
 async function refresh(){if(!intent)return;const data=await call('status',{id:intent.id});
+  if(data.testMode!==true||!data.token)throw new Error('PILOT_UNAVAILABLE');
+  intent={...intent,token:data.token,testMode:true};persist();
   $('reference').textContent='Prueba: '+intent.id;
   const names={pending:'Pendiente',paid:'Pagado',rejected:'Rechazado',needs_review:'Revisar',refunded:'Reembolsado',partially_refunded:'Reembolso parcial',charged_back:'Contracargo'};
   $('state').textContent=names[data.status]||data.status;$('count').textContent=data.confirmationCount;$('stock').textContent=data.simulatedStock;
@@ -56,12 +61,12 @@ $('loginForm').addEventListener('submit',e=>{e.preventDefault();run($('loginButt
   if(r.error){message('No se pudo iniciar sesión. Revisá el correo y la contraseña.');return;}await showAccess();
 });});
 $('start').onclick=()=>run($('start'),async()=>{requestId||=crypto.randomUUID();persist();intent=await call('create',{requestId});
-  if(intent.testMode!==true)throw new Error('PILOT_UNAVAILABLE');persist();$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();});
+  if(intent.testMode!==true)throw new Error('PILOT_UNAVAILABLE');history.replaceState(null,'',location.pathname+'?intent='+intent.id);persist();$('refresh').hidden=false;$('reconcile').hidden=false;$('pay').hidden=false;await refresh();});
 $('pay').onclick=()=>run($('pay'),async()=>{if(!intent)return;const data=await call('checkout',{id:intent.id,token:intent.token},false);const u=new URL(data.checkoutUrl);
   if(u.protocol!=='https:'||!['www.mercadopago.com.ar','sandbox.mercadopago.com.ar'].includes(u.hostname))throw new Error('PILOT_UNAVAILABLE');location.assign(u.href);});
 $('refresh').onclick=()=>run($('refresh'),refresh);
 $('reconcile').onclick=()=>run($('reconcile'),async()=>{let offset=0;do{const result=await call('reconcile',{id:intent.id,offset});offset=result.nextOffset;}while(offset!==null);await refresh();});
-$('newTest').onclick=()=>{intent=null;requestId=null;sessionStorage.removeItem(key);$('pay').hidden=true;$('refresh').hidden=true;$('reconcile').hidden=true;$('reference').textContent='';$('state').textContent='Sin iniciar';$('count').textContent='0';$('stock').textContent='2';message('Ensayo nuevo preparado. Los anteriores se conservan en el servidor.');};
+$('newTest').onclick=()=>{intent=null;requestId=null;sessionStorage.removeItem(key);history.replaceState(null,'',location.pathname);$('pay').hidden=true;$('refresh').hidden=true;$('reconcile').hidden=true;$('reference').textContent='';$('state').textContent='Sin iniciar';$('count').textContent='0';$('stock').textContent='2';message('Ensayo nuevo preparado. Los anteriores se conservan en el servidor.');};
 $('logout').onclick=()=>run($('logout'),async()=>{await client.auth.signOut();intent=null;requestId=null;sessionStorage.removeItem(key);await showAccess();});
 showAccess().catch(()=>message('No pudimos comprobar el acceso. El servidor puede estar restaurándose o pendiente de configuración.'));
 </script></body></html>
